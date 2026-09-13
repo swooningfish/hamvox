@@ -20,6 +20,8 @@ Hopefully this, or something like it, eventually makes its way into
 official builds of ASL3 and HamVOIP, so voice commands can change or
 disconnect nodes natively, without a separate Fauxmo/Alexa setup.
 
+73 M3COL (Greg)
+
 
 ## Usage
 
