@@ -124,26 +124,32 @@ Before installing this, you need:
 | North West Multimode | 533411 | NWMG (North West Multimode Grp) |
 | Enhanced Parrot | 55553 | Echo test node |
 
-Your own (local) node is set via `my_node` in `config/fauxmo.json`. You
-don't need to look this up by hand. Run `sudo scripts/configure-node.sh`
-after cloning (see Installation below); it detects your node number and
-system flavor (HamVOIP or ASL3) from Asterisk/`allstar.env`/`rpt.conf` and
-writes it into every device entry. You can also set `my_node` to the
-literal string `"auto"` to have Fauxmo re-detect it on every service start
-instead of baking in a static value; see "Auto-detecting your node number"
-below for the trade-offs.
+`config/fauxmo.json` doesn't ship in the repo; `config/fauxmo.json.sample`
+does. The first time you run `sudo scripts/configure-node.sh` (see
+Installation below), it copies the sample to `config/fauxmo.json` if that
+file doesn't exist yet, then fills in two things automatically: the
+`path` to `plugins/allstar_plugin.py` (worked out from wherever you cloned
+the repo, so it's correct even if you didn't use `/opt/hamvox`), and
+`my_node` on every device, detected from Asterisk/`allstar.env`/`rpt.conf`.
+Re-run it any time your local node number changes. You can also set
+`my_node` to the literal string `"auto"` to have Fauxmo re-detect it on
+every service start instead of baking in a static value; see
+"Auto-detecting your node number" below for the trade-offs.
 
-Edit `config/fauxmo.json` to add, remove, or rename devices/nodes. Each
-entry only needs `name`, a unique `port`, `my_node`, and `target_node`.
+Edit `config/fauxmo.json` (not the `.sample`) to add, remove, or rename
+devices/nodes. Each entry only needs `name`, a unique `port`, `my_node`,
+and `target_node`. `config/fauxmo.json` is gitignored, since it holds your
+own node numbers; `config/fauxmo.json.sample` is the tracked template.
 
 ## Repo layout
 
 ```
-config/fauxmo.json          Fauxmo + device configuration (edit this for your nodes)
+config/fauxmo.json.sample   Template config, copied to fauxmo.json on first run
+config/fauxmo.json          Your device configuration (gitignored, edit this for your nodes)
 plugins/allstar_plugin.py   Fauxmo plugin: on()/off() -> asterisk rpt commands
 scripts/allstar-cmd.sh      Input-validated wrapper actually invoked via sudo
 scripts/detect-node.sh      Detects local node number + system flavor
-scripts/configure-node.sh   One-time setup: runs detect-node.sh, writes result into fauxmo.json
+scripts/configure-node.sh   One-time setup: creates fauxmo.json, sets path, runs detect-node.sh
 systemd/fauxmo.service      systemd unit to run Fauxmo as a background service
 requirements.txt            Python dependencies
 ```
@@ -260,11 +266,13 @@ sudo scripts/configure-node.sh
 sudo chown "$USER":"$USER" config/fauxmo.json
 ```
 
-This runs `detect-node.sh` (checking `allstar.env`, then `rpt nodes`, then
-`rpt.conf`, in that order), prints the detected node number and whether it
-thinks this is HamVOIP or ASL3, and writes that node number into every
-device in `config/fauxmo.json`. Re-run it any time your node number
-changes.
+If `config/fauxmo.json` doesn't exist yet, this creates it from
+`config/fauxmo.json.sample` first. It then sets the plugin `path` to
+`plugins/allstar_plugin.py`'s actual location, runs `detect-node.sh`
+(checking `allstar.env`, then `rpt nodes`, then `rpt.conf`, in that order),
+prints the detected node number and whether it thinks this is HamVOIP or
+ASL3, and writes that node number into every device in
+`config/fauxmo.json`. Re-run it any time your node number changes.
 
 ### 7. Install and start the systemd service
 
@@ -285,11 +293,30 @@ journalctl -u fauxmo -f
 
 - Alexa devices discover Fauxmo devices over **SSDP (UDP 1900)**, then talk
   to each device's own TCP port (12340-12345 above), all on your LAN.
-- If you run `ufw` or similar, allow UDP 1900 and the device port range
-  from your LAN subnet.
 - Fauxmo and your Echo device(s) must be on the same subnet/VLAN. Alexa
   cannot discover Fauxmo devices across routed networks or over the
   internet.
+  
+If you run `ufw` (the default on Raspberry Pi OS), open the SSDP port and
+the device port range. Replace `192.168.1.0/24` with your own LAN subnet:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 1900 proto udp
+sudo ufw allow from 192.168.1.0/24 to any port 12340:12345 proto tcp
+sudo ufw reload
+```
+
+If you run `firewalld` instead (more common on ASL3/x86 boxes):
+
+```bash
+sudo firewall-cmd --permanent --add-port=1900/udp
+sudo firewall-cmd --permanent --add-port=12340-12345/tcp
+sudo firewall-cmd --reload
+```
+
+Adding a new device in `config/fauxmo.json` with a port outside
+12340-12345 means updating these rules to match.
+
 
 ### 9. Tell Alexa to discover the devices
 

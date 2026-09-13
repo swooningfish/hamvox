@@ -4,7 +4,7 @@
   },
   "PLUGINS": {
     "AllStarPlugin": {
-      "path": "/opt/alexa-allstar-fauxmo/plugins/allstar_plugin.py",
+      "path": "/opt/hamvox/plugins/allstar_plugin.py",
       "DEVICES": [
         {
           "name": "NWAG Primary",
