@@ -34,8 +34,12 @@ if [ -f /usr/local/etc/allstar.env ]; then
 fi
 
 # Fall back to asking Asterisk directly for the first node it knows about.
+# ("rpt nodes <node>" needs a node name and lists its *connected* peers, not
+# the local node itself; "rpt localnodes" is the one that dumps locally
+# configured node numbers, under a "Node\n----" header.)
 if [ -z "$NODE" ]; then
-    NODE=$("$ASTERISK" -rx "rpt nodes" 2>/dev/null | awk '/^Node/ {print $2; exit}')
+    NODE=$("$ASTERISK" -rx "rpt localnodes" 2>/dev/null \
+        | awk '/^----/ {f=1; next} f && NF {print $1; exit}')
 fi
 
 # Last resort: read the first node stanza out of rpt.conf directly.

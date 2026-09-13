@@ -12,7 +12,7 @@
 #
 # Examples:
 #   hamvox-asterisk-cmd.sh 1998 6            # disconnect all links
-#   hamvox-asterisk-cmd.sh 1998 3 53573      # connect to node 53573 (transceive, permanent)
+#   hamvox-asterisk-cmd.sh 1998 3 53573      # connect to node 53573 (transceive)
 
 set -euo pipefail
 

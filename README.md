@@ -128,7 +128,13 @@ value can't be used to run an arbitrary shell or Asterisk command as root.
 
 This works unmodified on either. Both are Asterisk + `app_rpt`, and the
 `ilink` function numbers this project calls (`6` = disconnect all, `3` =
-connect transceive/permanent) are the same on both.
+connect transceive) are the same on both. Note that ilink `3` is a normal
+(non-permanent) connect: it won't survive an Asterisk/app_rpt restart on
+its own, so a node reboot leaves everything disconnected until you tell
+Alexa to reconnect it. That's deliberate here, since these are
+user-toggled switches, not always-on links; app_rpt's separate "permanent"
+connect (ilink `13`, undone with `11` rather than `6`) isn't used by this
+project.
 
 A few things to know when running on ASL3 specifically:
 
@@ -329,8 +335,10 @@ sudo /usr/sbin/asterisk -rx "rpt cmd 1998 status 11 xxx"
 - **Change the ilink mode** (e.g. monitor-only instead of transceive):
   edit the `command_on`/`command_off` lines in
   `config/homeassistant/hamvox.yaml` directly (AllStar ilink function
-  reference: `1`=disconnect one, `2`/`3`=connect transceive
-  (temporary/permanent), `6`=disconnect all, `7`/`8`=monitor modes).
+  reference: `1`=disconnect one, `2`=connect monitor-only, `3`=connect
+  transceive, `6`=disconnect all, `8`=connect local-monitor-only,
+  `12`/`13`=permanent connect monitor-only/transceive, `11`=disconnect a
+  permanent link).
 
 ## License
 
