@@ -3,4 +3,5 @@ __pycache__/
 *.pyc
 .env
 config/fauxmo.local.json
+config/fauxmo.json
 .idea
