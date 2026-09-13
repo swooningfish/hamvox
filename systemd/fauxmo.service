@@ -1,0 +1,21 @@
+[Unit]
+Description=HamVox - Alexa voice control for AllStar/HamVOIP node connections
+After=network-online.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fauxmo
+Group=fauxmo
+WorkingDirectory=/opt/hamvox
+ExecStart=/opt/hamvox/venv/bin/fauxmo -c /opt/hamvox/config/fauxmo.json
+Restart=on-failure
+RestartSec=5
+
+# Hardening (loosen if you hit permission issues)
+NoNewPrivileges=false
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
