@@ -36,12 +36,73 @@ Saying **"Alexa, turn off NWAG Primary"** runs:
 rpt cmd 1998 ilink 6                # disconnect all current links
 ```
 
+Only one node can be connected at a time (that's how AllStar/app_rpt works,
+not a HamVox limitation). If you say "Alexa, turn on X" while a
+*different* node Y is already connected, HamVox refuses the request
+(logged to syslog as `hamvox`) and X stays off — Alexa will report it
+didn't turn on. Turn Y off first, then turn X on. This check runs live
+against Asterisk every time, so it's always correct regardless of what
+Home Assistant's dashboard happens to be showing at that moment.
+
+The switches' on/off state does still get double-checked against reality
+(not just assumed from the last button pressed), but *not* on a tight
+polling loop — that would mean 6+ `sudo asterisk -rx` calls every few
+seconds, all day, for a Pi that's otherwise idle. Instead:
+
+- Whenever you say "Alexa, turn on/off X", Home Assistant re-checks X's
+  own state immediately after running that command — this happens
+  regardless of any polling interval, so the switch you just spoke to is
+  always accurate right away.
+- A slow background poll (`scan_interval: 120`, i.e. every 2 minutes) is
+  only a safety net for the *other* switches, e.g. after switching to a
+  different node, or if someone connects to the node from the Asterisk
+  CLI directly. For an instant cross-switch refresh instead of waiting up
+  to 2 minutes, add the optional automation below.
+- The **HamVox Active Node** sensor shows which node (if any) is currently
+  connected, for one place to check regardless of switch state.
+
+**Optional: instant refresh across all switches.** Add this to your own
+`automations.yaml` (adjust entity IDs if you renamed any switches) to
+have every HamVox switch and the active-node sensor recheck itself the
+moment *any* of them changes, instead of waiting for the next
+`scan_interval` poll:
+
+```yaml
+- alias: HamVox - refresh on change
+  trigger:
+    - platform: state
+      entity_id:
+        - switch.hamvox_nwag_primary
+        - switch.hamvox_nwag_fallback
+        - switch.hamvox_east_coast_hub
+        - switch.hamvox_free_star
+        - switch.hamvox_north_west_multimode
+        - switch.hamvox_enhanced_parrot
+  action:
+    - service: homeassistant.update_entity
+      target:
+        entity_id:
+          - switch.hamvox_nwag_primary
+          - switch.hamvox_nwag_fallback
+          - switch.hamvox_east_coast_hub
+          - switch.hamvox_free_star
+          - switch.hamvox_north_west_multimode
+          - switch.hamvox_enhanced_parrot
+          - sensor.hamvox_active_node
+```
+
+This is still purely event-driven (it only ever runs right after one of
+the switches changes), not a tighter poll — it just closes the small gap
+where a *different* switch's display would otherwise lag behind by up to
+`scan_interval`.
+
 ## How it works
 
 1. **Home Assistant**, running on the same box as Asterisk, has one
-   `command_line` switch per node (`config/homeassistant/hamvox.yaml`).
-   Each switch calls `scripts/hamvox-asterisk-cmd.sh`, a small input-validated
-   wrapper invoked via `sudo`, never Asterisk directly.
+   `command_line` switch per node plus a sensor showing the active node
+   (`config/homeassistant/hamvox.yaml`). Each switch/sensor calls
+   `scripts/hamvox-asterisk-cmd.sh`, a small input-validated wrapper
+   invoked via `sudo`, never Asterisk directly.
 2. A **Matter bridge** ([Home Assistant Matter
    Hub](https://github.com/RiDDiX/home-assistant-matter-hub)) exposes
    those switches to any Matter controller.
@@ -109,8 +170,8 @@ node numbers; `hamvox.yaml.sample` is the tracked template.
 ## Repo layout
 
 ```
-config/homeassistant/hamvox.yaml.sample   Template Home Assistant switches, copied to hamvox.yaml on first run
-config/homeassistant/hamvox.yaml          Your Home Assistant switch config (gitignored)
+config/homeassistant/hamvox.yaml.sample   Template Home Assistant switches/sensor, copied to hamvox.yaml on first run
+config/homeassistant/hamvox.yaml          Your Home Assistant switch/sensor config (gitignored)
 scripts/hamvox-asterisk-cmd.sh            Input-validated wrapper, invoked via sudo
 scripts/detect-node.sh                    Detects local node number + system flavor
 scripts/configure-node.sh                 One-time setup: creates hamvox.yaml, fills in your node number
@@ -119,10 +180,15 @@ scripts/configure-node.sh                 One-time setup: creates hamvox.yaml, f
 ## How it stays safe to run with `sudo`
 
 Home Assistant doesn't call `sudo asterisk -rx "..."` directly. It calls
-`sudo /usr/local/bin/hamvox-asterisk-cmd.sh <my_node> <ilink> [<target_node>]`. The
-wrapper script rejects anything that isn't a plain number before it reaches
-Asterisk, and `sudoers` is scoped to that one script path. A broken config
-value can't be used to run an arbitrary shell or Asterisk command as root.
+`sudo /usr/local/bin/hamvox-asterisk-cmd.sh <my_node> <connect|disconnect|status> [<target_node>] [<ilink_num>]`.
+The wrapper script only exposes those three operations, rejects anything
+that isn't a plain number for `<my_node>`/`<target_node>`/`<ilink_num>`,
+and restricts `<ilink_num>` to the three non-permanent connect modes (`2`,
+`3`, `8`) — so it can't be used to run an arbitrary shell or Asterisk
+command as root, and `sudoers` is scoped to that one script path. It also
+refuses to `connect` to a different node while one is already connected
+(see "Usage" above), so a bad or overlapping switch press can't silently
+knock an existing link off the air.
 
 ## HamVOIP vs ASL3
 
@@ -292,7 +358,7 @@ re-registration, etc).
 
 Detection logic lives in `scripts/detect-node.sh`: it tries `NODE1` from
 `/usr/local/etc/allstar.env` (common on HamVOIP), then falls back to
-asking Asterisk directly (`rpt nodes`), then falls back to reading the
+asking Asterisk directly (`rpt localnodes`), then falls back to reading the
 first node stanza out of `/etc/asterisk/rpt.conf`. System flavor (HamVOIP
 vs ASL3) is detected too and printed for information; the underlying
 `ilink` commands are identical on both, so flavor doesn't change behavior,
@@ -325,20 +391,28 @@ sudo /usr/sbin/asterisk -rx "rpt cmd 1998 status 11 xxx"
   the Matter bridge and your Echo device are on the same LAN, that UDP
   5353 and 5540 aren't blocked, and check the Matter bridge's own
   connectivity troubleshooting docs.
+- **A switch won't turn on / immediately flips back off**: another node is
+  probably already connected — check the **HamVox Active Node** sensor, or
+  run `journalctl -t hamvox` (or check `/var/log/syslog`) for a "refused"
+  line naming which node to disconnect first.
 
 ## Customizing
 
 - **Add a node**: add another `- switch:` entry to
   `config/homeassistant/hamvox.yaml`, following the pattern of the
   existing ones, with a new `name`, `unique_id`, and target node number in
-  the `command_on` line. No code changes needed.
-- **Change the ilink mode** (e.g. monitor-only instead of transceive):
-  edit the `command_on`/`command_off` lines in
-  `config/homeassistant/hamvox.yaml` directly (AllStar ilink function
-  reference: `1`=disconnect one, `2`=connect monitor-only, `3`=connect
-  transceive, `6`=disconnect all, `8`=connect local-monitor-only,
-  `12`/`13`=permanent connect monitor-only/transceive, `11`=disconnect a
-  permanent link).
+  the `command_on`/`command_state` lines. Also add the node number/name
+  pair to the `names` map in the `HamVox Active Node` sensor's
+  `value_template`, so the sensor shows its name too. No code changes
+  needed.
+- **Change the ilink mode** (e.g. monitor-only instead of transceive): add
+  the ilink number as a 4th argument on the `command_on` line, e.g.
+  `... connect 53573 2` for monitor-only. The wrapper only allows `2`
+  (monitor-only), `3` (transceive, the default), or `8`
+  (local-monitor-only) — the permanent-link variants (`12`/`13`, undone
+  with `11` rather than `disconnect`) aren't supported, since this project
+  is built around user-toggled, non-permanent links (see "HamVOIP vs
+  ASL3").
 
 ## License
 

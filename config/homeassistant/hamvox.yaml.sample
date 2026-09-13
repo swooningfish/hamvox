@@ -7,45 +7,92 @@
 #   1. Copy this file to hamvox.yaml (same folder), or run
 #      "sudo scripts/configure-node.sh", which does that for you and also
 #      fills in MY_NODE below automatically.
-#   2. Either paste the "switch:" block into your Home Assistant
+#   2. Either paste the "switch:"/"sensor:" blocks into your Home Assistant
 #      configuration.yaml, or add a line there to include this file:
 #        command_line: !include config/homeassistant/hamvox.yaml
 #      (adjust the path to wherever your Home Assistant config lives).
 #   3. Restart Home Assistant.
 #
-# Each switch calls a small input-validated wrapper script:
-# scripts/hamvox-asterisk-cmd.sh. See "How it stays safe to run with sudo" in
-# README.md. The Home Assistant user (e.g. "homeassistant") needs
-# the same sudoers entry for hamvox-asterisk-cmd.sh described there.
+# Only one node can be connected at a time (that's how AllStar/app_rpt
+# works, not a HamVox limitation). Turning one on while another is
+# connected is refused (by the wrapper script itself, checked fresh
+# against Asterisk every time -- not against Home Assistant's cached
+# state) rather than silently dropping the other one; turn the active
+# node off first. The "HamVox Active Node" sensor below shows which node
+# (if any) is currently connected, for a single place to check.
+#
+# Each switch's command_state is re-checked immediately whenever THAT
+# switch's own command_on/command_off runs (e.g. "Alexa, turn on X"), so
+# the switch you just spoke to is always accurate right away. scan_interval
+# below is only a slow background safety net for the *other* switches --
+# e.g. after a different one takes over the link, or someone connects a
+# node from the Asterisk CLI directly -- so it's set high (2 minutes) to
+# avoid spawning a `sudo asterisk -rx` process from every switch every few
+# seconds on a Pi. If you want every switch's display to update within a
+# second of any of them changing, instead of waiting up to scan_interval,
+# add the optional "instant refresh" automation from README.md.
+#
+# Each switch/sensor calls a small input-validated wrapper script:
+# scripts/hamvox-asterisk-cmd.sh. See "How it stays safe to run with sudo"
+# in README.md. The Home Assistant user (e.g. "homeassistant") needs the
+# same sudoers entry for hamvox-asterisk-cmd.sh described there.
 
 command_line:
   - switch:
       name: NWAG Primary
       unique_id: hamvox_nwag_primary
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 53573"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 53573"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 53573"
+      scan_interval: 120
   - switch:
       name: NWAG Fallback
       unique_id: hamvox_nwag_fallback
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 47977"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 47977"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 47977"
+      scan_interval: 120
   - switch:
       name: East Coast Hub
       unique_id: hamvox_east_coast_hub
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 27339"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 27339"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 27339"
+      scan_interval: 120
   - switch:
       name: Free Star
       unique_id: hamvox_free_star
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 2167"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 2167"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 2167"
+      scan_interval: 120
   - switch:
       name: North West Multimode
       unique_id: hamvox_north_west_multimode
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 533411"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 533411"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 533411"
+      scan_interval: 120
   - switch:
       name: Enhanced Parrot
       unique_id: hamvox_enhanced_parrot
-      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 55553"
-      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE connect 55553"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE disconnect"
+      command_state: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status 55553"
+      scan_interval: 120
+  - sensor:
+      name: HamVox Active Node
+      unique_id: hamvox_active_node
+      command: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE status"
+      scan_interval: 120
+      value_template: >-
+        {% set names = {
+          '53573': 'NWAG Primary',
+          '47977': 'NWAG Fallback',
+          '27339': 'East Coast Hub',
+          '2167': 'Free Star',
+          '533411': 'North West Multimode',
+          '55553': 'Enhanced Parrot',
+        } %}
+        {% set node = value.split(',')[0] %}
+        {{ names.get(node, node) if node else 'None' }}

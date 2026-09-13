@@ -22,8 +22,9 @@ amateurs in their spare time.
   test changes against a real AllStarLink or HamVOIP node before opening a
   PR.
 * `config/homeassistant/hamvox.yaml.sample` defines one Home Assistant
-  switch per node (`command_on`/`command_off` map to Asterisk `rpt`
-  commands via the wrapper script).
+  switch per node (`command_on`/`command_off`/`command_state` map to
+  `connect`/`disconnect`/`status` on the wrapper script) plus one sensor
+  showing which node is currently active.
 * `scripts/hamvox-asterisk-cmd.sh` and `scripts/detect-node.sh` are the shell
   wrappers that Home Assistant calls via `sudo`. Keep changes to these
   minimal and well tested, since they run with elevated privileges. See
