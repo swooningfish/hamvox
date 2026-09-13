@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# allstar-cmd.sh, restricted wrapper around `asterisk -rx "rpt cmd ..."`.
+# hamvox-asterisk-cmd.sh, restricted wrapper around `asterisk -rx "rpt cmd ..."`.
 #
 # This exists so sudoers can grant NOPASSWD access to exactly this script
 # (see README.md) instead of to `asterisk` itself. It only accepts numeric
@@ -8,11 +8,11 @@
 # CLI commands.
 #
 # Usage:
-#   allstar-cmd.sh <my_node> <ilink_num> [<target_node>]
+#   hamvox-asterisk-cmd.sh <my_node> <ilink_num> [<target_node>]
 #
 # Examples:
-#   allstar-cmd.sh 1998 6            # disconnect all links
-#   allstar-cmd.sh 1998 3 53573      # connect to node 53573 (transceive, permanent)
+#   hamvox-asterisk-cmd.sh 1998 6            # disconnect all links
+#   hamvox-asterisk-cmd.sh 1998 3 53573      # connect to node 53573 (transceive, permanent)
 
 set -euo pipefail
 

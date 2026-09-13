@@ -1,0 +1,51 @@
+# HamVox command_line switches for Home Assistant.
+#
+# This exposes HamVox switches to Alexa via a Matter bridge (see "How it
+# works" in README.md).
+#
+# Setup:
+#   1. Copy this file to hamvox.yaml (same folder), or run
+#      "sudo scripts/configure-node.sh", which does that for you and also
+#      fills in MY_NODE below automatically.
+#   2. Either paste the "switch:" block into your Home Assistant
+#      configuration.yaml, or add a line there to include this file:
+#        command_line: !include config/homeassistant/hamvox.yaml
+#      (adjust the path to wherever your Home Assistant config lives).
+#   3. Restart Home Assistant.
+#
+# Each switch calls a small input-validated wrapper script:
+# scripts/hamvox-asterisk-cmd.sh. See "How it stays safe to run with sudo" in
+# README.md. The Home Assistant user (e.g. "homeassistant") needs
+# the same sudoers entry for hamvox-asterisk-cmd.sh described there.
+
+command_line:
+  - switch:
+      name: NWAG Primary
+      unique_id: hamvox_nwag_primary
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 53573"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+  - switch:
+      name: NWAG Fallback
+      unique_id: hamvox_nwag_fallback
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 47977"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+  - switch:
+      name: East Coast Hub
+      unique_id: hamvox_east_coast_hub
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 27339"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+  - switch:
+      name: Free Star
+      unique_id: hamvox_free_star
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 2167"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+  - switch:
+      name: North West Multimode
+      unique_id: hamvox_north_west_multimode
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 533411"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"
+  - switch:
+      name: Enhanced Parrot
+      unique_id: hamvox_enhanced_parrot
+      command_on: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6 && sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 3 55553"
+      command_off: "sudo /usr/local/bin/hamvox-asterisk-cmd.sh MY_NODE 6"

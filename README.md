@@ -1,10 +1,8 @@
 # HamVox
 
-Voice control for AllStarLink and HamVOIP node connections using Alexa.
-
-Built on [Fauxmo](https://github.com/n8henrie/fauxmo), which emulates Belkin
-WeMo devices that Alexa can discover and switch "on"/"off". No skill, no
-cloud account, and no internet dependency for the actual switching.
+Voice control for AllStarLink and HamVOIP node connections using Alexa,
+bridged through Home Assistant and Matter. No skill, no cloud account, and
+no port forwarding required for the actual switching.
 
 ## Why this project exists
 
@@ -18,7 +16,7 @@ Credit to **G5TOM** and **M7VDX** for the inspiration behind this project.
 
 Hopefully this, or something like it, eventually makes its way into
 official builds of ASL3 and HamVOIP, so voice commands can change or
-disconnect nodes natively, without a separate Fauxmo/Alexa setup.
+disconnect nodes natively, without a separate Home Assistant/Alexa setup.
 
 73 M3COL (Greg)
 
@@ -38,52 +36,24 @@ Saying **"Alexa, turn off NWAG Primary"** runs:
 rpt cmd 1998 ilink 6                # disconnect all current links
 ```
 
+## How it works
 
-## TL;DR: quick setup
+1. **Home Assistant**, running on the same box as Asterisk, has one
+   `command_line` switch per node (`config/homeassistant/hamvox.yaml`).
+   Each switch calls `scripts/hamvox-asterisk-cmd.sh`, a small input-validated
+   wrapper invoked via `sudo`, never Asterisk directly.
+2. A **Matter bridge** ([Home Assistant Matter
+   Hub](https://github.com/RiDDiX/home-assistant-matter-hub)) exposes
+   those switches to any Matter controller.
+3. **Alexa** commissions the bridge directly over Matter. No skill, no
+   account linking, no cloud dependency for the actual switching.
 
-Check the Requirements section below first. Then, on your Pi/node:
-
-```bash
-# Get the code onto the Pi
-sudo mkdir -p /opt/hamvox
-sudo chown "$USER" /opt/hamvox
-git clone <your-repo-url> /opt/hamvox
-cd /opt/hamvox
-
-# Set up the Python environment
-sudo apt update
-sudo apt install -y python3-venv python3-pip
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-deactivate
-
-# Install the wrapper scripts that Fauxmo calls via sudo
-sudo cp scripts/allstar-cmd.sh /usr/local/bin/allstar-cmd.sh
-sudo cp scripts/detect-node.sh /usr/local/bin/allstar-detect-node.sh
-sudo chown root:root /usr/local/bin/allstar-cmd.sh /usr/local/bin/allstar-detect-node.sh
-sudo chmod 755 /usr/local/bin/allstar-cmd.sh /usr/local/bin/allstar-detect-node.sh
-
-# Create an unprivileged service user, and grant it passwordless
-# sudo for those two wrapper scripts only
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin fauxmo
-sudo visudo -f /etc/sudoers.d/allstar-cmd
-# add: fauxmo ALL=(root) NOPASSWD: /usr/local/bin/allstar-cmd.sh
-# add: fauxmo ALL=(root) NOPASSWD: /usr/local/bin/allstar-detect-node.sh
-sudo chmod 440 /etc/sudoers.d/allstar-cmd
-
-# Detect your local node number and write it into config/fauxmo.json
-sudo scripts/configure-node.sh
-sudo chown "$USER":"$USER" config/fauxmo.json
-
-# Install and start the systemd service
-sudo cp systemd/fauxmo.service /etc/systemd/system/fauxmo.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now fauxmo
-```
-
-Then say "Alexa, discover devices." Full explanation of each step is in
-Installation below.
+Earlier versions of this project used [Fauxmo](https://github.com/n8henrie/fauxmo)
+to emulate a Belkin WeMo device instead. Amazon changed how Alexa
+discovers local WeMo/Hue-style devices in November 2025, now requiring SSL
+for anything newly added, which broke that approach for new setups. Matter
+is the replacement people have actually gotten working, so HamVox now uses
+Home Assistant + Matter instead, and no longer needs Fauxmo at all.
 
 ## Requirements / prerequisites
 
@@ -100,15 +70,15 @@ Before installing this, you need:
   Pi 3, 4, 5, Zero 2 W, and amd64/x86, so a non-Pi Linux box works too.
 - **A radio transceiver and interface** connected to and configured with
   your node (e.g. a URIxB/DMK-style USB interface, or a supported HT/mobile
-  radio via `chan_simpleusb`/`chan_usbradio`). Fauxmo only issues link
-  connect/disconnect commands over the network side of AllStar; it doesn't
-  touch radio or audio configuration, so your node needs to already be
-  transmitting and receiving correctly.
-- **An Alexa device** (Echo, Echo Dot, etc.) on the **same LAN/subnet** as
-  the Pi. Alexa discovers Fauxmo devices over local SSDP, which doesn't
-  cross routed networks, VLANs, or the internet.
-- **Python 3.9+** and **`sudo`/root access** on the Pi, to install Fauxmo,
-  the wrapper scripts, and the systemd service.
+  radio via `chan_simpleusb`/`chan_usbradio`). The wrapper script only
+  issues link connect/disconnect commands over the network side of
+  AllStar; it doesn't touch radio or audio configuration, so your node
+  needs to already be transmitting and receiving correctly.
+- **A Matter-capable Amazon device** (not every Echo model supports
+  Matter) on the **same LAN** as the Pi. Matter commissioning doesn't cross
+  routed networks or the internet.
+- **`sudo`/root access** on the Pi, to install Home Assistant, the wrapper
+  scripts, and the Matter bridge.
 - Root/sudo access to `/usr/sbin/asterisk` on that same machine. This has
   to run directly on the box where Asterisk/`app_rpt` is live; it won't
   work against a remote node over the network.
@@ -124,40 +94,32 @@ Before installing this, you need:
 | North West Multimode | 533411 | NWMG (North West Multimode Grp) |
 | Enhanced Parrot | 55553 | Echo test node |
 
-`config/fauxmo.json` doesn't ship in the repo; `config/fauxmo.json.sample`
-does. The first time you run `sudo scripts/configure-node.sh` (see
-Installation below), it copies the sample to `config/fauxmo.json` if that
-file doesn't exist yet, then fills in two things automatically: the
-`path` to `plugins/allstar_plugin.py` (worked out from wherever you cloned
-the repo, so it's correct even if you didn't use `/opt/hamvox`), and
-`my_node` on every device, detected from Asterisk/`allstar.env`/`rpt.conf`.
-Re-run it any time your local node number changes. You can also set
-`my_node` to the literal string `"auto"` to have Fauxmo re-detect it on
-every service start instead of baking in a static value; see
-"Auto-detecting your node number" below for the trade-offs.
+`config/homeassistant/hamvox.yaml` doesn't ship in the repo;
+`config/homeassistant/hamvox.yaml.sample` does. The first time you run
+`sudo scripts/configure-node.sh` (see Installation below), it copies the
+sample to `hamvox.yaml` if that file doesn't exist yet, then replaces the
+`MY_NODE` placeholder in every switch with your local node number,
+detected from Asterisk/`allstar.env`/`rpt.conf`. Re-run it any time your
+local node number changes.
 
-Edit `config/fauxmo.json` (not the `.sample`) to add, remove, or rename
-devices/nodes. Each entry only needs `name`, a unique `port`, `my_node`,
-and `target_node`. `config/fauxmo.json` is gitignored, since it holds your
-own node numbers; `config/fauxmo.json.sample` is the tracked template.
+Edit `config/homeassistant/hamvox.yaml` (not the `.sample`) to add,
+remove, or rename devices/nodes. It's gitignored, since it holds your own
+node numbers; `hamvox.yaml.sample` is the tracked template.
 
 ## Repo layout
 
 ```
-config/fauxmo.json.sample   Template config, copied to fauxmo.json on first run
-config/fauxmo.json          Your device configuration (gitignored, edit this for your nodes)
-plugins/allstar_plugin.py   Fauxmo plugin: on()/off() -> asterisk rpt commands
-scripts/allstar-cmd.sh      Input-validated wrapper actually invoked via sudo
-scripts/detect-node.sh      Detects local node number + system flavor
-scripts/configure-node.sh   One-time setup: creates fauxmo.json, sets path, runs detect-node.sh
-systemd/fauxmo.service      systemd unit to run Fauxmo as a background service
-requirements.txt            Python dependencies
+config/homeassistant/hamvox.yaml.sample   Template Home Assistant switches, copied to hamvox.yaml on first run
+config/homeassistant/hamvox.yaml          Your Home Assistant switch config (gitignored)
+scripts/hamvox-asterisk-cmd.sh            Input-validated wrapper, invoked via sudo
+scripts/detect-node.sh                    Detects local node number + system flavor
+scripts/configure-node.sh                 One-time setup: creates hamvox.yaml, fills in your node number
 ```
 
 ## How it stays safe to run with `sudo`
 
-Fauxmo doesn't call `sudo asterisk -rx "..."` directly. It calls
-`sudo /usr/local/bin/allstar-cmd.sh <my_node> <ilink> [<target_node>]`. The
+Home Assistant doesn't call `sudo asterisk -rx "..."` directly. It calls
+`sudo /usr/local/bin/hamvox-asterisk-cmd.sh <my_node> <ilink> [<target_node>]`. The
 wrapper script rejects anything that isn't a plain number before it reaches
 Asterisk, and `sudoers` is scoped to that one script path. A broken config
 value can't be used to run an arbitrary shell or Asterisk command as root.
@@ -172,20 +134,19 @@ A few things to know when running on ASL3 specifically:
 
 - **Asterisk runs as the `asterisk` user, not root.** This only matters if
   something talks to the Asterisk CLI without elevated privileges. Since
-  `allstar-cmd.sh` is invoked via `sudo` (root) either way, no changes are
+  `hamvox-asterisk-cmd.sh` is invoked via `sudo` (root) either way, no changes are
   needed; root can reach the Asterisk control socket on both platforms.
 - **ASL3 also runs on amd64/x86, not just Raspberry Pi.** Nothing here is
   Pi-specific beyond the docs assuming a Pi. Install steps are identical on
-  an x86 ASL3 box; just adjust the `/opt/hamvox` path if you prefer a
-  different location.
-- **Double-check `my_node` in `config/fauxmo.json`.** Make sure it matches
-  the node number actually registered on your ASL3 install (portal
-  registration works differently from HamVOIP, so it's easy to have a
-  stale number after a migration).
-- Everything else (wrapper script, sudoers entry, systemd unit, Fauxmo
-  config) is identical between the two.
+  an x86 ASL3 box.
+- **Double-check `my_node` in `config/homeassistant/hamvox.yaml`.** Make
+  sure it matches the node number actually registered on your ASL3 install
+  (portal registration works differently from HamVOIP, so it's easy to
+  have a stale number after a migration).
+- Everything else (wrapper script, sudoers entry, Home Assistant config)
+  is identical between the two.
 
-## Installation (Raspberry Pi running HamVOIP/AllStar)
+## Installation
 
 Run these on the same Pi where Asterisk/`app_rpt` is running. `asterisk -rx`
 only works against a local Asterisk instance.
@@ -199,164 +160,142 @@ git clone <your-repo-url> /opt/hamvox
 cd /opt/hamvox
 ```
 
-(If you're copying this from elsewhere instead of cloning, just get the
-whole folder onto the Pi at that path, or adjust the paths in
-`config/fauxmo.json` and `systemd/fauxmo.service` if you use a different one.)
+### 2. Install Home Assistant Core
 
-### 2. Python environment
+Follow the [official Linux install docs](https://www.home-assistant.io/installation/linux)
+to install Home Assistant Core directly on this box (not a container that
+can't reach the local Asterisk CLI, and not Home Assistant OS/Supervised,
+which expects to own the whole machine). Those docs have you create a
+dedicated `homeassistant` system user; do that before continuing.
 
-```bash
-sudo apt update
-sudo apt install -y python3-venv python3-pip
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-deactivate
-```
+### 3. Install the wrapper script
 
-### 3. Install the wrapper scripts
+`scripts/detect-node.sh` doesn't need installing system-wide; it's only
+ever run locally by `scripts/configure-node.sh` (step 5). Only the wrapper
+that Home Assistant calls at runtime needs to live outside the repo:
 
 ```bash
-sudo cp scripts/allstar-cmd.sh /usr/local/bin/allstar-cmd.sh
-sudo cp scripts/detect-node.sh /usr/local/bin/allstar-detect-node.sh
-sudo chown root:root /usr/local/bin/allstar-cmd.sh /usr/local/bin/allstar-detect-node.sh
-sudo chmod 755 /usr/local/bin/allstar-cmd.sh /usr/local/bin/allstar-detect-node.sh
+sudo cp scripts/hamvox-asterisk-cmd.sh /usr/local/bin/hamvox-asterisk-cmd.sh
+sudo chown root:root /usr/local/bin/hamvox-asterisk-cmd.sh
+sudo chmod 755 /usr/local/bin/hamvox-asterisk-cmd.sh
 ```
 
-### 4. Create a dedicated service user
-
-Running Fauxmo as its own unprivileged user (rather than `pi` or `root`)
-limits what a bug or compromise in Fauxmo could touch.
+### 4. Grant the Home Assistant user passwordless sudo for the wrapper only
 
 ```bash
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin fauxmo
+sudo visudo -f /etc/sudoers.d/hamvox-asterisk-cmd
 ```
 
-### 5. Grant that user passwordless sudo for the wrapper only
-
-```bash
-sudo visudo -f /etc/sudoers.d/allstar-cmd
-```
-
-Add these lines, save, and exit:
+Add this line, save, and exit:
 
 ```
-fauxmo ALL=(root) NOPASSWD: /usr/local/bin/allstar-cmd.sh
-fauxmo ALL=(root) NOPASSWD: /usr/local/bin/allstar-detect-node.sh
+homeassistant ALL=(root) NOPASSWD: /usr/local/bin/hamvox-asterisk-cmd.sh
 ```
-
-The second line is only needed if you use `"my_node": "auto"` in
-`config/fauxmo.json` (see step 6). The Fauxmo service itself never calls
-the detect script otherwise, so skip that line if every device has a plain
-numeric `my_node`.
 
 Lock down the permissions on the sudoers snippet itself:
 
 ```bash
-sudo chmod 440 /etc/sudoers.d/allstar-cmd
+sudo chmod 440 /etc/sudoers.d/hamvox-asterisk-cmd
 ```
 
-### 6. Detect and configure your node number
+### 5. Detect and configure your node number
 
-Instead of hand-editing `my_node` in `config/fauxmo.json`, let the repo
-find it for you:
+Instead of hand-editing `config/homeassistant/hamvox.yaml`, let the repo
+find your node number for you:
 
 ```bash
 sudo scripts/configure-node.sh
-sudo chown "$USER":"$USER" config/fauxmo.json
+sudo chown "$USER":"$USER" config/homeassistant/hamvox.yaml
 ```
 
-If `config/fauxmo.json` doesn't exist yet, this creates it from
-`config/fauxmo.json.sample` first. It then sets the plugin `path` to
-`plugins/allstar_plugin.py`'s actual location, runs `detect-node.sh`
-(checking `allstar.env`, then `rpt nodes`, then `rpt.conf`, in that order),
-prints the detected node number and whether it thinks this is HamVOIP or
-ASL3, and writes that node number into every device in
-`config/fauxmo.json`. Re-run it any time your node number changes.
+If `hamvox.yaml` doesn't exist yet, this creates it from
+`hamvox.yaml.sample` first. It then runs `detect-node.sh` (checking
+`allstar.env`, then `rpt nodes`, then `rpt.conf`, in that order), prints
+the detected node number and whether it thinks this is HamVOIP or ASL3,
+and replaces the `MY_NODE` placeholder in every switch. Re-run it any
+time your node number changes.
 
-### 7. Install and start the systemd service
+### 6. Add the switches to Home Assistant
+
+Either paste the `command_line:` block from
+`config/homeassistant/hamvox.yaml` straight into your Home Assistant
+`configuration.yaml`, or add a line there to include the file:
+
+```yaml
+command_line: !include /opt/hamvox/config/homeassistant/hamvox.yaml
+```
+
+(adjust the path if you didn't use `/opt/hamvox`, and drop the leading
+`command_line:` key from `hamvox.yaml` itself if you include it this way,
+since the include line already provides it).
+
+Restart Home Assistant:
 
 ```bash
-sudo cp systemd/fauxmo.service /etc/systemd/system/fauxmo.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now fauxmo
+sudo systemctl restart home-assistant@homeassistant
 ```
 
-Check it came up cleanly:
+Check the switches appear and toggle correctly from the Home Assistant
+dashboard before involving Alexa at all, that's the quickest way to
+confirm the wrapper script and sudoers are working.
 
-```bash
-sudo systemctl status fauxmo
-journalctl -u fauxmo -f
-```
+### 7. Install a Matter bridge and expose the switches
+
+Install [Home Assistant Matter Hub](https://github.com/RiDDiX/home-assistant-matter-hub),
+following that project's own install and pairing docs (its packaging and
+setup steps change independently of this repo). Once running, use its
+dashboard to expose the new HamVox switches.
 
 ### 8. Network / firewall notes
 
-- Alexa devices discover Fauxmo devices over **SSDP (UDP 1900)**, then talk
-  to each device's own TCP port (12340-12345 above), all on your LAN.
-- Fauxmo and your Echo device(s) must be on the same subnet/VLAN. Alexa
-  cannot discover Fauxmo devices across routed networks or over the
-  internet.
-  
-If you run `ufw` (the default on Raspberry Pi OS), open the SSDP port and
-the device port range. Replace `192.168.1.0/24` with your own LAN subnet:
+Matter needs mDNS for discovery plus its own operational port, both UDP:
 
 ```bash
-sudo ufw allow from 192.168.1.0/24 to any port 1900 proto udp
-sudo ufw allow from 192.168.1.0/24 to any port 12340:12345 proto tcp
+sudo ufw allow from 192.168.1.0/24 to any port 5353 proto udp
+sudo ufw allow from 192.168.1.0/24 to any port 5540 proto udp
 sudo ufw reload
 ```
 
-If you run `firewalld` instead (more common on ASL3/x86 boxes):
+(Replace `192.168.1.0/24` with your own LAN subnet.) If you run
+`firewalld` instead:
 
 ```bash
-sudo firewall-cmd --permanent --add-port=1900/udp
-sudo firewall-cmd --permanent --add-port=12340-12345/tcp
+sudo firewall-cmd --permanent --add-port=5353/udp
+sudo firewall-cmd --permanent --add-port=5540/udp
 sudo firewall-cmd --reload
 ```
 
-Adding a new device in `config/fauxmo.json` with a port outside
-12340-12345 means updating these rules to match.
+Matter and its port assignments are still evolving; check your Matter
+bridge's own troubleshooting docs if commissioning doesn't work with just
+these two.
 
+### 9. Commission the bridge with Alexa
 
-### 9. Tell Alexa to discover the devices
-
-Open the Alexa app: Devices > **+** > Add Device > **Other** >
-"Discover devices", or just say:
-
-> "Alexa, discover devices."
-
-You should see the six names above show up as switches.
+In the Alexa app: Devices > **+** > Add Device > **Matter**, and follow
+the prompts (usually scanning a QR code the Matter bridge's dashboard
+gives you).
 
 ## Auto-detecting your node number
 
-There are two ways to keep `my_node` correct. One is enough for most
-people:
+`scripts/configure-node.sh` (step 5 above) bakes your node number into
+`config/homeassistant/hamvox.yaml` once. Detection runs a single time
+during setup, and Home Assistant never has to shell out or need extra
+sudo access to figure out its own node number at runtime. Re-run the
+script any time the node number changes (new SD card, node
+re-registration, etc).
 
-- **Recommended: bake it in once with `configure-node.sh`** (step 6
-  above). Detection runs a single time during setup, the result is written
-  as a plain number into `config/fauxmo.json`, and Fauxmo never has to
-  shell out or need extra sudo access to figure out its own node number at
-  runtime. Re-run the script if the node number ever changes.
-- **Optional: `"my_node": "auto"` in the config.** The plugin calls
-  `allstar-detect-node.sh` itself the first time it's needed after Fauxmo
-  starts (cached after that, so it only runs once per service start). Use
-  this if the node number genuinely changes between boots and you don't
-  want to re-run the setup script. Requires the extra `sudoers` line from
-  step 5, and adds a small amount of startup latency and one more thing
-  that can fail (e.g. if Asterisk isn't up yet when Fauxmo starts).
-
-Both use the same detection logic in `scripts/detect-node.sh`: it tries
-`NODE1` from `/usr/local/etc/allstar.env` (common on HamVOIP), then falls
-back to asking Asterisk directly (`rpt nodes`), then falls back to reading
-the first node stanza out of `/etc/asterisk/rpt.conf`. System flavor
-(HamVOIP vs ASL3) is detected too and printed for information; the
-underlying `ilink` commands are identical on both, so flavor doesn't change
-behavior, it's just handy for diagnostics.
+Detection logic lives in `scripts/detect-node.sh`: it tries `NODE1` from
+`/usr/local/etc/allstar.env` (common on HamVOIP), then falls back to
+asking Asterisk directly (`rpt nodes`), then falls back to reading the
+first node stanza out of `/etc/asterisk/rpt.conf`. System flavor (HamVOIP
+vs ASL3) is detected too and printed for information; the underlying
+`ilink` commands are identical on both, so flavor doesn't change behavior,
+it's just handy for diagnostics.
 
 ## Verifying node status manually
 
-To confirm connections independent of Alexa/Fauxmo, run the same kind of
-status query you'd use directly on the Pi:
+To confirm connections independent of Alexa/Home Assistant, run the same
+kind of status query you'd use directly on the Pi:
 
 ```bash
 sudo /usr/sbin/asterisk -rx "rpt cmd 1998 status 11 xxx"
@@ -366,33 +305,32 @@ sudo /usr/sbin/asterisk -rx "rpt cmd 1998 status 11 xxx"
 
 ## Troubleshooting
 
-- **Alexa says "device is not responding"**: check `journalctl -u fauxmo -f`
-  while you speak the command. Fauxmo logs each on/off call and any
-  wrapper script errors.
-- **"Invalid my_node" / "Invalid target_node" in the logs**: a value in
-  `config/fauxmo.json` isn't purely numeric. Fix it there.
-- **`sudo: a password is required`**: the sudoers line in step 5 wasn't
-  applied to the `fauxmo` user, or the path doesn't exactly match
-  `/usr/local/bin/allstar-cmd.sh` (or `/usr/local/bin/allstar-detect-node.sh`
-  if you're using `"my_node": "auto"`).
-- **`node auto-detection failed` in the logs**: only relevant if you're
-  using `"my_node": "auto"`. Usually means the `sudoers` line for
-  `allstar-detect-node.sh` is missing, or Asterisk wasn't fully up yet when
-  Fauxmo started. Switch to a plain numeric `my_node` (via
-  `configure-node.sh`) to remove this as a startup dependency entirely.
-- **Devices don't show up on "discover devices"**: double check the Pi and
-  Echo are on the same LAN/subnet, and that UDP 1900 isn't blocked.
+- **Alexa says a device isn't responding**: check Home Assistant's own
+  logs for the switch entity, and confirm it toggles correctly from the
+  Home Assistant dashboard first, that isolates whether the problem is the
+  wrapper script/sudo or the Matter bridge/Alexa side.
+- **`sudo: a password is required`**: the sudoers line in step 4 wasn't
+  applied to the `homeassistant` user, or the path doesn't exactly match
+  `/usr/local/bin/hamvox-asterisk-cmd.sh`.
+- **A value in `config/homeassistant/hamvox.yaml` still says `MY_NODE`**:
+  `scripts/configure-node.sh` hasn't been run yet, or failed to detect a
+  node number, run it again and check its output.
+- **Devices don't show up when commissioning in the Alexa app**: confirm
+  the Matter bridge and your Echo device are on the same LAN, that UDP
+  5353 and 5540 aren't blocked, and check the Matter bridge's own
+  connectivity troubleshooting docs.
 
 ## Customizing
 
-- **Add a node**: add another object to the `DEVICES` array in
-  `config/fauxmo.json` with a new `name`, a unique `port`, and the
-  `target_node`. No code changes needed.
-- **Change the ilink mode** (e.g. monitor-only instead of transceive): edit
-  `ILINK_CONNECT_TRANSCEIVE_PERMANENT` in `plugins/allstar_plugin.py`
-  (AllStar ilink function reference: `1`=disconnect one, `2`/`3`=connect
-  transceive (temporary/permanent), `6`=disconnect all, `7`/`8`=monitor
-  modes).
+- **Add a node**: add another `- switch:` entry to
+  `config/homeassistant/hamvox.yaml`, following the pattern of the
+  existing ones, with a new `name`, `unique_id`, and target node number in
+  the `command_on` line. No code changes needed.
+- **Change the ilink mode** (e.g. monitor-only instead of transceive):
+  edit the `command_on`/`command_off` lines in
+  `config/homeassistant/hamvox.yaml` directly (AllStar ilink function
+  reference: `1`=disconnect one, `2`/`3`=connect transceive
+  (temporary/permanent), `6`=disconnect all, `7`/`8`=monitor modes).
 
 ## License
 

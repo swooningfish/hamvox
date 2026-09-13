@@ -1,12 +1,12 @@
 #!/bin/bash
 #
-# detect-node.sh — determine the local AllStar/HamVOIP node number and
+# detect-node.sh, determine the local AllStar/HamVOIP node number and
 # report whether this box is running HamVOIP or AllStarLink (ASL3).
 #
 # Detection logic adapted from:
 # https://gist.github.com/swooningfish/9abcd06f98a9aa6b675a51c895a67d9e
 #
-# Must run with access to the Asterisk CLI (root, or via sudo) — even
+# Must run with access to the Asterisk CLI (root, or via sudo). Even
 # read-only `asterisk -rx` queries go through the same control socket as
 # the commands that change link state, and on ASL3 that socket is owned
 # by the `asterisk` user rather than root.
@@ -50,8 +50,9 @@ NODE="$(printf '%s' "$NODE" | tr -cd '0-9')"
 
 if [ -z "$NODE" ]; then
     echo "ERROR: could not determine local node number automatically." >&2
-    echo "Set NODE1 in /usr/local/etc/allstar.env, or set my_node manually" >&2
-    echo "in config/fauxmo.json instead of using auto-detection." >&2
+    echo "Set NODE1 in /usr/local/etc/allstar.env, or set the node number" >&2
+    echo "manually in config/homeassistant/hamvox.yaml instead of using" >&2
+    echo "auto-detection." >&2
     exit 1
 fi
 
